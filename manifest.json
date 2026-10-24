@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Strava Heatmap → JOSM",
+  "version": "1.0",
+  "description": "Gera a URL TMS do Strava Global Heatmap para JOSM/iD, com a assinatura CloudFront na própria URL.",
+  "permissions": ["cookies", "tabs"],
+  "host_permissions": ["https://*.strava.com/*"],
+  "action": {
+    "default_title": "Strava Heatmap → JOSM",
+    "default_popup": "popup.html"
+  }
+}

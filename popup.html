@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font: 13px system-ui, sans-serif; width: 420px; margin: 12px; color: #222; }
+    h1 { font-size: 15px; margin: 0 0 8px; color: #fc5200; }
+    label { display: block; margin-top: 8px; font-weight: 600; }
+    select, textarea { width: 100%; box-sizing: border-box; font: inherit; }
+    textarea { height: 90px; font-family: monospace; font-size: 11px; word-break: break-all; }
+    .row { display: flex; gap: 8px; }
+    .row > div { flex: 1; }
+    button { margin-top: 6px; background: #fc5200; color: #fff; border: 0; border-radius: 12px; padding: 5px 12px; font-weight: 600; cursor: pointer; }
+    #status { margin-top: 8px; white-space: pre-line; }
+    .ok { color: #1a7f37; } .err { color: #c00; }
+  </style>
+</head>
+<body>
+  <h1>Strava Heatmap → JOSM</h1>
+  <div class="row">
+    <div>
+      <label for="sport">Atividade</label>
+      <select id="sport">
+        <option>all</option><option>ride</option><option>run</option>
+        <option>water</option><option>winter</option>
+      </select>
+    </div>
+    <div>
+      <label for="color">Cor</label>
+      <select id="color">
+        <option>hot</option><option>blue</option><option>purple</option>
+        <option>gray</option><option>bluered</option><option>orange</option>
+      </select>
+    </div>
+  </div>
+
+  <label for="josm">JOSM (TMS)</label>
+  <textarea id="josm" readonly></textarea>
+  <button data-copy="josm">Copiar para JOSM</button>
+
+  <label for="plain">URL simples (iD, QGIS, etc.)</label>
+  <textarea id="plain" readonly></textarea>
+  <button data-copy="plain">Copiar URL</button>
+
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
