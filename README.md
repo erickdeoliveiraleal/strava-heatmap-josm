@@ -20,6 +20,12 @@ A URL gerada:
 tms[3,15]:https://content-a.strava.com/identified/globalheat/{sport}/{color}/{zoom}/{x}/{y}.png?Key-Pair-Id=…&Policy=…&Signature=…
 ```
 
+O popup testa três formas de acesso ao tile (assinatura na URL, header `Cookie` como o JOSM envia, e cookies do navegador) e indica qual link usar. Se a assinatura na URL não for aceita, use **Copiar para JOSM (header)**:
+
+```
+tms[3,15]:https://content-a.strava.com/identified/globalheat/{sport}/{color}/{zoom}/{x}/{y}.png{header(Cookie,CloudFront-Key-Pair-Id=…;CloudFront-Policy=…;CloudFront-Signature=…)}
+```
+
 ## Observações
 
 - A assinatura expira em ~24h; depois é só abrir o heatmap e gerar de novo.
