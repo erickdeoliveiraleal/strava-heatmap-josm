@@ -1,12 +1,14 @@
 "use strict";
 
 const TILE_BASE = "https://content-a.strava.com/identified/globalheat/";
-const CF = ["CloudFront-Key-Pair-Id", "CloudFront-Policy", "CloudFront-Signature"];
+// Cookies que o servidor de tiles exige (assinatura CloudFront + _strava_idcf).
+// A assinatura sozinha na URL não é aceita (HTTP 401), por isso vão no header Cookie.
+const REQUIRED = ["CloudFront-Key-Pair-Id", "CloudFront-Policy", "CloudFront-Signature", "_strava_idcf"];
 const TEST_TILE = [12, 1497, 2230]; // Brasília
 
 const $ = (id) => document.getElementById(id);
 let cookies = null; // Map nome -> valor de todos os cookies do Strava
-let needed = CF; // cookies que vão no header do JOSM
+let needed = REQUIRED; // cookies que vão no header do JOSM
 let expires = null;
 
 function setStatus(text, cls) {
@@ -30,30 +32,13 @@ function cookieHeader(names) {
   return names.map((n) => `${n}=${cookies.get(n)}`).join(";");
 }
 
-// CloudFront aceita a mesma assinatura dos cookies como query string (signed URL).
-function query() {
-  return CF.map((n) => `${n.replace("CloudFront-", "")}=${encodeURIComponent(cookies.get(n))}`).join("&");
-}
-
 function tilePath(z, x, y) {
   return `${TILE_BASE}${$("sport").value}/${$("color").value}/${z}/${x}/${y}.png`;
 }
 
 function render() {
   if (!cookies) return;
-  const plain = `${tilePath("{zoom}", "{x}", "{y}")}?${query()}`;
-  $("josm").value = `tms[3,15]:${plain}`;
-  $("plain").value = plain.replace("{zoom}", "{z}");
-  $("josmHeader").value = `tms[3,15]:${tilePath("{zoom}", "{x}", "{y}")}{header(Cookie,${cookieHeader(needed)})}`;
-}
-
-async function probe(url, opts) {
-  try {
-    const r = await fetch(url, { cache: "no-store", ...opts });
-    return r.status;
-  } catch (e) {
-    return `erro (${e.message})`;
-  }
+  $("josm").value = `tms[3,15]:${tilePath("{zoom}", "{x}", "{y}")}{header(Cookie,${cookieHeader(needed)})}`;
 }
 
 // Simula o JOSM: request sem cookies do navegador, só com o header Cookie dado.
@@ -72,7 +57,8 @@ async function probeWithHeader(names) {
         condition: { urlFilter: "jtest=1", resourceTypes: ["xmlhttprequest", "other"] },
       }],
     });
-    return await probe(`${tilePath(...TEST_TILE)}?jtest=1`, { credentials: "omit" });
+    const r = await fetch(`${tilePath(...TEST_TILE)}?jtest=1`, { credentials: "omit", cache: "no-store" });
+    return r.status;
   } catch (e) {
     return `erro (${e.message})`;
   } finally {
@@ -80,10 +66,11 @@ async function probeWithHeader(names) {
   }
 }
 
-// Parte de todos os cookies e tira um por vez; se o tile continua 200, aquele não é necessário.
+// Caso o Strava mude os requisitos: parte de todos os cookies e tira um por vez;
+// se o tile continua 200, aquele não é necessário.
 async function findNeeded() {
   let set = [...cookies.keys()];
-  const order = [...set.filter((n) => !CF.includes(n)), ...CF]; // CloudFront por último
+  const order = [...set.filter((n) => !REQUIRED.includes(n)), ...REQUIRED];
   for (let i = 0; i < order.length; i++) {
     setStatus(`Procurando cookies necessários… ${i + 1}/${order.length}`);
     const without = set.filter((n) => n !== order[i]);
@@ -92,34 +79,20 @@ async function findNeeded() {
   return set;
 }
 
-const mark = (s) => (s === 200 ? "✔" : "✖");
-
 async function runTests() {
-  const q = await probe(`${tilePath(...TEST_TILE)}?${query()}`, { credentials: "omit" });
   const exp = expires ? `\nVálido até: ${expires.toLocaleString()}` : "";
-  if (q === 200) {
-    setStatus(`✔ URL sem header funciona (HTTP 200).\n→ Use "Copiar para JOSM".${exp}`, "ok");
+  const s = await probeWithHeader(needed);
+  if (s === 200) {
+    setStatus(`✔ Tile de teste OK.${exp}`, "ok");
     return;
   }
-
-  const all = await probeWithHeader([...cookies.keys()]);
-  if (all !== 200) {
-    const c = await probe(tilePath(...TEST_TILE), { credentials: "include" });
-    setStatus(
-      `✖ URL sem header: HTTP ${q}\n✖ Header com todos os cookies: HTTP ${all}\n${mark(c)} Cookies do navegador: HTTP ${c}\n` +
-      "→ O Strava exige algo além de cookies (ex.: Referer). Me mande este resultado.",
-      "err"
-    );
+  if ((await probeWithHeader([...cookies.keys()])) !== 200) {
+    setStatus(`✖ Tile de teste falhou (HTTP ${s}). Abra o heatmap logado, dê zoom e tente de novo.${exp}`, "err");
     return;
   }
-
   needed = await findNeeded();
   render();
-  setStatus(
-    `✖ URL sem header: HTTP ${q}\n✔ Header Cookie funciona com: ${needed.join(", ")}\n` +
-    `→ Use "Copiar para JOSM (header)".${exp}`,
-    "ok"
-  );
+  setStatus(`✔ O Strava mudou os cookies exigidos; link ajustado para: ${needed.join(", ")}${exp}`, "ok");
 }
 
 async function init() {
@@ -132,9 +105,10 @@ async function init() {
   }
 
   cookies = await readCookies();
-  if (!CF.every((n) => cookies.has(n))) {
+  const missing = REQUIRED.filter((n) => !cookies.has(n));
+  if (missing.length) {
     setStatus(
-      "Cookies CloudFront não encontrados.\nAbra https://www.strava.com/maps/global-heatmap logado, dê zoom no mapa e abra este popup de novo.",
+      `Cookies não encontrados: ${missing.join(", ")}.\nAbra https://www.strava.com/maps/global-heatmap logado, dê zoom no mapa e abra este popup de novo.`,
       "err"
     );
     cookies = null;

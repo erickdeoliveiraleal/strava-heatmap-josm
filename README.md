@@ -1,6 +1,6 @@
 # Strava Heatmap → JOSM
 
-Extensão Chrome que gera a URL TMS do [Strava Global Heatmap](https://www.strava.com/maps/global-heatmap) para o JOSM (e iD, QGIS etc.), **sem precisar de header de cookie**: a assinatura CloudFront vai na própria URL (`?Key-Pair-Id=…&Policy=…&Signature=…`).
+Extensão Chrome que gera a URL TMS do [Strava Global Heatmap](https://www.strava.com/maps/global-heatmap) para o JOSM, com os cookies necessários já no header.
 
 ## Instalação
 
@@ -11,23 +11,23 @@ Extensão Chrome que gera a URL TMS do [Strava Global Heatmap](https://www.strav
 ## Uso
 
 1. Abra o heatmap do Strava logado e dê zoom no mapa.
-2. Clique no ícone da extensão. Ela lê os cookies `CloudFront-*`, monta a URL e testa um tile sem cookies (✔ = funcionando).
+2. Clique no ícone da extensão. Ela lê os cookies (inclusive os HttpOnly), monta o link e testa um tile do jeito que o JOSM vai pedir (✔ = funcionando).
 3. **Copiar para JOSM** → JOSM: *Preferências → Imagens → + TMS* → cole.
 
-A URL gerada:
+O link gerado:
 
 ```
-tms[3,15]:https://content-a.strava.com/identified/globalheat/{sport}/{color}/{zoom}/{x}/{y}.png?Key-Pair-Id=…&Policy=…&Signature=…
+tms[3,15]:https://content-a.strava.com/identified/globalheat/{sport}/{color}/{zoom}/{x}/{y}.png{header(Cookie,CloudFront-Key-Pair-Id=…;CloudFront-Policy=…;CloudFront-Signature=…;_strava_idcf=…)}
 ```
 
-O popup testa três formas de acesso ao tile (assinatura na URL, header `Cookie` como o JOSM envia, e cookies do navegador) e indica qual link usar. Se a assinatura na URL não for aceita, use **Copiar para JOSM (header)**:
+## Como funciona
 
-```
-tms[3,15]:https://content-a.strava.com/identified/globalheat/{sport}/{color}/{zoom}/{x}/{y}.png{header(Cookie,CloudFront-Key-Pair-Id=…;CloudFront-Policy=…;CloudFront-Signature=…)}
-```
+O servidor de tiles exige quatro cookies: a assinatura CloudFront (`CloudFront-Key-Pair-Id`, `CloudFront-Policy`, `CloudFront-Signature`) e `_strava_idcf`. Só a assinatura não basta, e ela também não é aceita como parâmetro na URL (HTTP 401), por isso o link usa o `{header(...)}` do JOSM. Esses cookies são HttpOnly, então userscripts normalmente não conseguem lê-los; a extensão consegue porque tem permissão de cookies em `*.strava.com`.
+
+Se o Strava mudar os cookies exigidos, a extensão detecta a falha no teste e descobre sozinha o novo conjunto mínimo.
 
 ## Observações
 
-- A assinatura expira em ~24h; depois é só abrir o heatmap e gerar de novo.
-- A URL gerada funciona como credencial da sua sessão enquanto válida: não compartilhe.
+- Os cookies expiram em ~24h; depois é só abrir o heatmap e gerar de novo.
+- O link gerado funciona como credencial da sua sessão enquanto válido: não compartilhe.
 - A extensão só tem permissão de cookies em `*.strava.com`.
