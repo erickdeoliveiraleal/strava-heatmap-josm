@@ -1,11 +1,13 @@
 "use strict";
 
 const TILE_BASE = "https://content-a.strava.com/identified/globalheat/";
-const CF = ["Key-Pair-Id", "Policy", "Signature"];
+const CF = ["CloudFront-Key-Pair-Id", "CloudFront-Policy", "CloudFront-Signature"];
 const TEST_TILE = [12, 1497, 2230]; // Brasília
 
 const $ = (id) => document.getElementById(id);
-let signature = null; // { "Key-Pair-Id": ..., Policy: ..., Signature: ..., expires: Date|null }
+let cookies = null; // Map nome -> valor de todos os cookies do Strava
+let needed = CF; // cookies que vão no header do JOSM
+let expires = null;
 
 function setStatus(text, cls) {
   $("status").textContent = text;
@@ -13,28 +15,24 @@ function setStatus(text, cls) {
 }
 
 // Com host_permissions, chrome.cookies enxerga também os cookies HttpOnly.
-async function readSignature() {
+async function readCookies() {
   const all = [
     ...(await chrome.cookies.getAll({ url: TILE_BASE })),
     ...(await chrome.cookies.getAll({ domain: "strava.com" })),
   ];
-  const sig = {};
-  for (const c of all) {
-    for (const k of CF) {
-      if (c.name === `CloudFront-${k}` && !sig[k]) sig[k] = c.value;
-    }
-    if (c.name === "_strava_CloudFront-Expires") sig.expires = new Date(Number(c.value));
-  }
-  return CF.every((k) => sig[k]) ? sig : null;
+  const map = new Map();
+  for (const c of all) if (!map.has(c.name)) map.set(c.name, c.value);
+  if (map.has("_strava_CloudFront-Expires")) expires = new Date(Number(map.get("_strava_CloudFront-Expires")));
+  return map;
+}
+
+function cookieHeader(names) {
+  return names.map((n) => `${n}=${cookies.get(n)}`).join(";");
 }
 
 // CloudFront aceita a mesma assinatura dos cookies como query string (signed URL).
 function query() {
-  return CF.map((k) => `${k}=${encodeURIComponent(signature[k])}`).join("&");
-}
-
-function cookieHeader() {
-  return CF.map((k) => `CloudFront-${k}=${signature[k]}`).join(";");
+  return CF.map((n) => `${n.replace("CloudFront-", "")}=${encodeURIComponent(cookies.get(n))}`).join("&");
 }
 
 function tilePath(z, x, y) {
@@ -42,11 +40,11 @@ function tilePath(z, x, y) {
 }
 
 function render() {
-  if (!signature) return;
+  if (!cookies) return;
   const plain = `${tilePath("{zoom}", "{x}", "{y}")}?${query()}`;
   $("josm").value = `tms[3,15]:${plain}`;
   $("plain").value = plain.replace("{zoom}", "{z}");
-  $("josmHeader").value = `tms[3,15]:${tilePath("{zoom}", "{x}", "{y}")}{header(Cookie,${cookieHeader()})}`;
+  $("josmHeader").value = `tms[3,15]:${tilePath("{zoom}", "{x}", "{y}")}{header(Cookie,${cookieHeader(needed)})}`;
 }
 
 async function probe(url, opts) {
@@ -58,8 +56,8 @@ async function probe(url, opts) {
   }
 }
 
-// Simula o JOSM: request sem cookies do navegador, só com o header Cookie dos 3 CloudFront.
-async function probeWithHeader(url) {
+// Simula o JOSM: request sem cookies do navegador, só com o header Cookie dado.
+async function probeWithHeader(names) {
   const id = 1;
   try {
     await chrome.declarativeNetRequest.updateSessionRules({
@@ -69,39 +67,59 @@ async function probeWithHeader(url) {
         priority: 1,
         action: {
           type: "modifyHeaders",
-          requestHeaders: [{ header: "Cookie", operation: "set", value: cookieHeader() }],
+          requestHeaders: [{ header: "Cookie", operation: "set", value: cookieHeader(names) }],
         },
         condition: { urlFilter: "jtest=1", resourceTypes: ["xmlhttprequest", "other"] },
       }],
     });
-    return await probe(`${url}?jtest=1`, { credentials: "omit" });
+    return await probe(`${tilePath(...TEST_TILE)}?jtest=1`, { credentials: "omit" });
   } catch (e) {
     return `erro (${e.message})`;
   } finally {
-    chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [id] }).catch(() => {});
+    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [id] }).catch(() => {});
   }
+}
+
+// Parte de todos os cookies e tira um por vez; se o tile continua 200, aquele não é necessário.
+async function findNeeded() {
+  let set = [...cookies.keys()];
+  const order = [...set.filter((n) => !CF.includes(n)), ...CF]; // CloudFront por último
+  for (let i = 0; i < order.length; i++) {
+    setStatus(`Procurando cookies necessários… ${i + 1}/${order.length}`);
+    const without = set.filter((n) => n !== order[i]);
+    if (without.length && (await probeWithHeader(without)) === 200) set = without;
+  }
+  return set;
 }
 
 const mark = (s) => (s === 200 ? "✔" : "✖");
 
 async function runTests() {
-  const base = tilePath(...TEST_TILE);
-  const [q, h, c] = await Promise.all([
-    probe(`${base}?${query()}`, { credentials: "omit" }),
-    probeWithHeader(base),
-    probe(base, { credentials: "include" }),
-  ]);
-  const exp = signature.expires ? `\nVálido até: ${signature.expires.toLocaleString()}` : "";
-  const lines =
-    `${mark(q)} URL sem header (assinatura na URL): HTTP ${q}\n` +
-    `${mark(h)} URL com header Cookie (como o JOSM faz): HTTP ${h}\n` +
-    `${mark(c)} Cookies do navegador: HTTP ${c}`;
-  let tip;
-  if (q === 200) tip = "→ Use \"Copiar para JOSM\".";
-  else if (h === 200) tip = "→ O Strava não aceita a assinatura na URL. Use \"Copiar para JOSM (header)\".";
-  else if (c === 200) tip = "→ O Strava exige outros cookies além dos CloudFront. Me mande este resultado.";
-  else tip = "→ Nenhum funcionou. Abra o heatmap logado, dê zoom e tente de novo.";
-  setStatus(`${lines}\n${tip}${exp}`, q === 200 || h === 200 ? "ok" : "err");
+  const q = await probe(`${tilePath(...TEST_TILE)}?${query()}`, { credentials: "omit" });
+  const exp = expires ? `\nVálido até: ${expires.toLocaleString()}` : "";
+  if (q === 200) {
+    setStatus(`✔ URL sem header funciona (HTTP 200).\n→ Use "Copiar para JOSM".${exp}`, "ok");
+    return;
+  }
+
+  const all = await probeWithHeader([...cookies.keys()]);
+  if (all !== 200) {
+    const c = await probe(tilePath(...TEST_TILE), { credentials: "include" });
+    setStatus(
+      `✖ URL sem header: HTTP ${q}\n✖ Header com todos os cookies: HTTP ${all}\n${mark(c)} Cookies do navegador: HTTP ${c}\n` +
+      "→ O Strava exige algo além de cookies (ex.: Referer). Me mande este resultado.",
+      "err"
+    );
+    return;
+  }
+
+  needed = await findNeeded();
+  render();
+  setStatus(
+    `✖ URL sem header: HTTP ${q}\n✔ Header Cookie funciona com: ${needed.join(", ")}\n` +
+    `→ Use "Copiar para JOSM (header)".${exp}`,
+    "ok"
+  );
 }
 
 async function init() {
@@ -113,12 +131,13 @@ async function init() {
     if (p.get("gColor")) $("color").value = p.get("gColor").toLowerCase();
   }
 
-  signature = await readSignature();
-  if (!signature) {
+  cookies = await readCookies();
+  if (!CF.every((n) => cookies.has(n))) {
     setStatus(
       "Cookies CloudFront não encontrados.\nAbra https://www.strava.com/maps/global-heatmap logado, dê zoom no mapa e abra este popup de novo.",
       "err"
     );
+    cookies = null;
     return;
   }
   render();
