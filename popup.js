@@ -97,6 +97,7 @@ async function runTests() {
 
 async function init() {
   // Usa atividade/cor da aba aberta no heatmap, se houver
+  // (tab.url vem preenchido para abas do strava.com graças às host_permissions)
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab && tab.url && tab.url.includes("strava.com/maps/global-heatmap")) {
     const p = new URL(tab.url).searchParams;

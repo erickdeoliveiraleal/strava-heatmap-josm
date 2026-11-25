@@ -26,6 +26,14 @@ O servidor de tiles exige quatro cookies: a assinatura CloudFront (`CloudFront-K
 
 Se o Strava mudar os cookies exigidos, a extensão detecta a falha no teste e descobre sozinha o novo conjunto mínimo.
 
+## Publicação na Chrome Web Store
+
+```powershell
+.\pack.ps1
+```
+
+Gera `dist/strava-heatmap-josm-<versão>.zip` para enviar no [Developer Dashboard](https://chrome.google.com/webstore/devconsole). Os textos da listagem, as justificativas de permissão e o bloco promocional estão em [`store/`](store/LISTING.md); a política de privacidade está em [PRIVACY.md](PRIVACY.md).
+
 ## Observações
 
 - Os cookies expiram em ~24h; depois é só abrir o heatmap e gerar de novo.
